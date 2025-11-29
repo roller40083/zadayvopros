@@ -23,7 +23,7 @@ function initializeSupabase() {
     });
 
     console.log('Supabase инициализирован с заголовками');
-    
+
     // Ждем немного перед проверкой авторизации
     setTimeout(() => {
         checkAuth();
@@ -35,13 +35,13 @@ async function checkAuth() {
     try {
         console.log('Проверка авторизации...');
         const { data: { session }, error } = await supabaseClient.auth.getSession();
-        
+
         if (error) {
             console.error('Ошибка получения сессии:', error);
             showAuth();
             return;
         }
-        
+
         if (session) {
             console.log('Сессия найдена:', session.user.email);
             showDashboard(session.user);
@@ -61,6 +61,7 @@ function showAuth() {
     document.getElementById('auth-section').classList.remove('hidden');
     document.getElementById('dashboard-section').classList.add('hidden');
     document.getElementById('expert-dashboard-section').classList.add('hidden');
+    document.getElementById('admin-panel').classList.add('hidden');
 }
 
 // Показываем личный кабинет
@@ -74,7 +75,7 @@ function showDashboard(user) {
 // Загружаем данные пользователя
 async function loadUserData(user) {
     console.log('=== НАЧАЛО loadUserData ===');
-
+    
     try {
         // Загружаем профиль
         const { data: profile, error } = await supabaseClient
@@ -103,9 +104,20 @@ async function loadUserData(user) {
             if (bioTextarea && profile.expert_bio) {
                 bioTextarea.value = profile.expert_bio;
             }
+
+            // Проверяем админ-права и показываем админ-панель
+            if (profile.is_admin) {
+                document.getElementById('admin-panel').classList.remove('hidden');
+                await loadExpertApplications();
+                await loadAllUsers();
+            } else {
+                document.getElementById('admin-panel').classList.add('hidden');
+            }
         }
+
         await loadUserQuestions(user.id);
         await loadExperts();
+        checkApplicationStatus();
 
         console.log('=== КОНЕЦ loadUserData ===');
 
@@ -117,7 +129,7 @@ async function loadUserData(user) {
 // Загружаем вопросы пользователя
 async function loadUserQuestions(userId) {
     console.log('Загрузка вопросов для пользователя:', userId);
-    
+
     try {
         // Сначала загружаем вопросы
         const { data: questions, error: questionsError } = await supabaseClient
@@ -164,16 +176,16 @@ async function loadUserQuestions(userId) {
         );
 
         document.getElementById('questions-count').textContent = questionsWithDetails.length;
-        
+
         const answeredCount = questionsWithDetails.filter(q => q.answer).length;
         document.getElementById('answers-count').textContent = answeredCount;
-        
+
         const questionsList = document.getElementById('questions-list');
-        
+
         questionsList.innerHTML = questionsWithDetails.map(q => {
             const expertName = getExpertDisplayName(q.expert);
             const expertSpecialization = q.expert?.expert_specialization || 'Специализация не указана';
-            
+
             return `
                 <div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;">
                     <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
@@ -246,43 +258,256 @@ async function loadExperts() {
         }
 
         expertsList.innerHTML = experts.map(expert => `
-    <div class="expert-card" style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 8px; cursor: pointer;" 
-         onclick="selectExpert('${expert.id}', '${getExpertDisplayName(expert)}')">
-        <div style="display: flex; justify-content: space-between; align-items: start;">
-            <div style="flex: 1;">
-                <h4 style="margin: 0 0 5px 0;">${getExpertDisplayName(expert)}</h4>
-                ${expert.expert_specialization ? `
-                    <p style="margin: 0; color: #666; font-size: 14px;">
-                        🎯 ${expert.expert_specialization}
-                    </p>
-                ` : ''}
-                ${expert.expert_bio ? `
-                    <p style="margin: 10px 0 0 0; font-size: 14px; color: #555;">${expert.expert_bio}</p>
-                ` : ''}
+            <div class="expert-card" style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 8px; cursor: pointer;" 
+                 onclick="selectExpert('${expert.id}', '${getExpertDisplayName(expert)}')">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div style="flex: 1;">
+                        <h4 style="margin: 0 0 5px 0;">${getExpertDisplayName(expert)}</h4>
+                        ${expert.expert_specialization ? `
+                            <p style="margin: 0; color: #666; font-size: 14px;">
+                                🎯 ${expert.expert_specialization}
+                            </p>
+                        ` : ''}
+                        ${expert.expert_bio ? `
+                            <p style="margin: 10px 0 0 0; font-size: 14px; color: #555;">${expert.expert_bio}</p>
+                        ` : ''}
+                    </div>
+                    <div style="background: #007bff; color: white; padding: 5px 10px; border-radius: 15px; font-size: 12px; white-space: nowrap; margin-left: 10px;">
+                        Выбрать
+                    </div>
+                </div>
             </div>
-            <div style="background: #007bff; color: white; padding: 5px 10px; border-radius: 15px; font-size: 12px; white-space: nowrap; margin-left: 10px;">
-                Выбрать
-            </div>
-        </div>
-    </div>
-`).join('');
+        `).join('');
 
     } catch (err) {
         console.error('Ошибка в loadExperts:', err);
     }
 }
 
-// Функция для отображения специализации
-function getSpecializationText(specialization) {
-    const specializations = {
-        'programming': 'Программирование',
-        'design': 'Дизайн',
-        'marketing': 'Маркетинг',
-        'business': 'Бизнес',
-        'law': 'Юриспруденция',
-        'psychology': 'Психология'
-    };
-    return specializations[specialization] || specialization || 'Не указана';
+// Загрузка заявок экспертов для админа
+async function loadExpertApplications() {
+    try {
+        const { data: applications, error } = await supabaseClient
+            .from('profiles')
+            .select('*')
+            .eq('expert_application', 'pending')
+            .order('updated_at', { ascending: false });
+
+        if (error) {
+            console.error('Ошибка загрузки заявок:', error);
+            return;
+        }
+
+        const applicationsList = document.getElementById('admin-applications-list');
+        
+        if (!applications || applications.length === 0) {
+            applicationsList.innerHTML = '<p>Нет заявок на рассмотрении</p>';
+            return;
+        }
+
+        applicationsList.innerHTML = applications.map(app => `
+            <div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                    <div style="flex: 1;">
+                        <h4 style="margin: 0 0 5px 0;">${app.first_name || ''} ${app.last_name || ''}</h4>
+                        <p style="margin: 0; color: #666;">
+                            <strong>Username:</strong> ${app.username} | 
+                            <strong>Специализация:</strong> ${app.expert_specialization || 'Не указана'}
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="approveExpert('${app.id}')" style="background: #28a745; padding: 5px 10px; border: none; border-radius: 3px; color: white; cursor: pointer;">
+                            ✅ Одобрить
+                        </button>
+                        <button onclick="rejectExpert('${app.id}')" style="background: #dc3545; padding: 5px 10px; border: none; border-radius: 3px; color: white; cursor: pointer;">
+                            ❌ Отклонить
+                        </button>
+                    </div>
+                </div>
+                
+                ${app.expert_bio ? `
+                    <div style="margin: 10px 0;">
+                        <strong>О себе:</strong>
+                        <p style="margin: 5px 0; color: #555;">${app.expert_bio}</p>
+                    </div>
+                ` : ''}
+                
+                ${app.expert_experience ? `
+                    <div style="margin: 10px 0;">
+                        <strong>Опыт работы:</strong>
+                        <p style="margin: 5px 0; color: #555; white-space: pre-wrap;">${app.expert_experience}</p>
+                    </div>
+                ` : ''}
+                
+                <div style="color: #666; font-size: 12px;">
+                    Заявка подана: ${new Date(app.updated_at).toLocaleDateString()}
+                </div>
+            </div>
+        `).join('');
+
+    } catch (err) {
+        console.error('Ошибка в loadExpertApplications:', err);
+    }
+}
+
+// Загрузка всех пользователей для админа
+async function loadAllUsers() {
+    try {
+        const { data: users, error } = await supabaseClient
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('Ошибка загрузки пользователей:', error);
+            return;
+        }
+
+        const usersList = document.getElementById('admin-users-list');
+        
+        if (!users || users.length === 0) {
+            usersList.innerHTML = '<p>Нет пользователей</p>';
+            return;
+        }
+
+        usersList.innerHTML = users.map(user => `
+            <div style="border: 1px solid #ddd; padding: 15px; margin: 10px 0; border-radius: 5px;">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div style="flex: 1;">
+                        <h5 style="margin: 0 0 5px 0;">
+                            ${user.first_name || ''} ${user.last_name || ''} 
+                            ${user.is_admin ? ' 👑' : ''}
+                            ${user.is_expert ? ' 🎯' : ''}
+                        </h5>
+                        <p style="margin: 0; color: #666; font-size: 14px;">
+                            <strong>Username:</strong> ${user.username} |
+                            <strong>Статус:</strong> 
+                            ${user.is_admin ? 'Админ' : user.is_expert ? 'Эксперт' : 'Пользователь'} |
+                            <strong>Заявка:</strong> ${user.expert_application || 'нет'}
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 5px; flex-direction: column;">
+                        ${!user.is_admin ? `
+                            <button onclick="toggleAdmin('${user.id}', true)" style="background: #ffc107; padding: 3px 8px; border: none; border-radius: 3px; font-size: 12px; cursor: pointer;">
+                                👑 Сделать админом
+                            </button>
+                        ` : `
+                            <button onclick="toggleAdmin('${user.id}', false)" style="background: #6c757d; padding: 3px 8px; border: none; border-radius: 3px; font-size: 12px; cursor: pointer;">
+                                👑 Снять админа
+                            </button>
+                        `}
+                        
+                        ${!user.is_expert ? `
+                            <button onclick="toggleExpertStatus('${user.id}', true)" style="background: #28a745; padding: 3px 8px; border: none; border-radius: 3px; font-size: 12px; cursor: pointer;">
+                                🎯 Сделать экспертом
+                            </button>
+                        ` : `
+                            <button onclick="toggleExpertStatus('${user.id}', false)" style="background: #dc3545; padding: 3px 8px; border: none; border-radius: 3px; font-size: 12px; cursor: pointer;">
+                                🚫 Убрать эксперта
+                            </button>
+                        `}
+                    </div>
+                </div>
+                <div style="color: #666; font-size: 12px; margin-top: 5px;">
+                    Зарегистрирован: ${new Date(user.created_at).toLocaleDateString()}
+                </div>
+            </div>
+        `).join('');
+
+    } catch (err) {
+        console.error('Ошибка в loadAllUsers:', err);
+    }
+}
+
+// Одобрить эксперта
+async function approveExpert(userId) {
+    try {
+        const { error } = await supabaseClient
+            .from('profiles')
+            .update({
+                expert_application: 'approved',
+                is_expert: true,
+                updated_at: new Date()
+            })
+            .eq('id', userId);
+
+        if (error) throw error;
+
+        showNotification('Эксперт одобрен! ✅', 'success');
+        loadExpertApplications(); // Обновляем список
+        
+    } catch (err) {
+        console.error('Ошибка одобрения эксперта:', err);
+        showNotification('Ошибка при одобрении ❌', 'error');
+    }
+}
+
+// Отклонить эксперта
+async function rejectExpert(userId) {
+    try {
+        const { error } = await supabaseClient
+            .from('profiles')
+            .update({
+                expert_application: 'rejected',
+                is_expert: false,
+                updated_at: new Date()
+            })
+            .eq('id', userId);
+
+        if (error) throw error;
+
+        showNotification('Заявка отклонена ❌', 'success');
+        loadExpertApplications(); // Обновляем список
+        
+    } catch (err) {
+        console.error('Ошибка отклонения эксперта:', err);
+        showNotification('Ошибка при отклонении ❌', 'error');
+    }
+}
+
+// Включить/выключить админ-права
+async function toggleAdmin(userId, makeAdmin) {
+    try {
+        const { error } = await supabaseClient
+            .from('profiles')
+            .update({
+                is_admin: makeAdmin,
+                updated_at: new Date()
+            })
+            .eq('id', userId);
+
+        if (error) throw error;
+
+        showNotification(`Пользователь ${makeAdmin ? 'теперь админ 👑' : 'больше не админ'}`, 'success');
+        loadAllUsers(); // Обновляем список
+        
+    } catch (err) {
+        console.error('Ошибка изменения админ-прав:', err);
+        showNotification('Ошибка при изменении прав ❌', 'error');
+    }
+}
+
+// Включить/выключить статус эксперта
+async function toggleExpertStatus(userId, makeExpert) {
+    try {
+        const { error } = await supabaseClient
+            .from('profiles')
+            .update({
+                is_expert: makeExpert,
+                expert_application: makeExpert ? 'approved' : null,
+                updated_at: new Date()
+            })
+            .eq('id', userId);
+
+        if (error) throw error;
+
+        showNotification(`Пользователь ${makeExpert ? 'теперь эксперт 🎯' : 'больше не эксперт'}`, 'success');
+        loadAllUsers(); // Обновляем список
+        
+    } catch (err) {
+        console.error('Ошибка изменения статуса эксперта:', err);
+        showNotification('Ошибка при изменении статуса ❌', 'error');
+    }
 }
 
 // Функция для отображения имени эксперта
@@ -302,7 +527,7 @@ function selectExpert(expertId, expertDisplayName) {
     document.getElementById('selected-expert-id').value = expertId;
     document.getElementById('selected-expert-name').textContent = expertDisplayName;
     document.getElementById('selected-expert-display').style.display = 'block';
-    
+
     showNotification(`Выбран эксперт: ${expertDisplayName} ✅`, 'success');
     document.getElementById('question-title').focus();
 }
@@ -433,7 +658,7 @@ async function signIn() {
         } else {
             showNotification('Вход выполнен успешно! Добро пожаловать! 👋', 'success');
             showDashboard(data.user);
-            loadUserData(data.user);
+            await loadUserData(data.user);
             document.getElementById('login-email').value = '';
             document.getElementById('login-password').value = '';
         }
@@ -455,30 +680,40 @@ async function signOut() {
 
 // Обновление профиля эксперта
 async function updateProfile() {
-    console.log('Начало updateProfile');
-
     const firstName = document.getElementById('first-name').value;
     const lastName = document.getElementById('last-name').value;
     const specialization = document.getElementById('expert-specialization').value;
     const bio = document.getElementById('expert-bio').value;
+    const experience = document.getElementById('expert-experience').value;
 
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
-
-    if (userError || !user) {
-        console.error('Ошибка получения пользователя:', userError);
-        showNotification('Ошибка: пользователь не авторизован', 'error');
+    if (!firstName || !lastName || !specialization || !bio || !experience) {
+        showNotification('Заполните все поля для подачи заявки ❌', 'error');
         return;
     }
+
+    const { data: { user } } = await supabaseClient.auth.getUser();
 
     try {
         const { data: existingProfile, error: checkError } = await supabaseClient
             .from('profiles')
-            .select('id')
+            .select('id, expert_application, is_expert')
             .eq('id', user.id)
             .single();
 
+        // Проверяем статус заявки
+        if (existingProfile?.expert_application === 'pending') {
+            showNotification('Ваша заявка уже на рассмотрении ⏳', 'info');
+            return;
+        }
+
+        if (existingProfile?.is_expert) {
+            showNotification('Вы уже являетесь экспертом ✅', 'success');
+            return;
+        }
+
         let result;
         if (checkError && checkError.code === 'PGRST116') {
+            // Создаем новый профиль с заявкой
             result = await supabaseClient
                 .from('profiles')
                 .insert({
@@ -488,10 +723,13 @@ async function updateProfile() {
                     last_name: lastName,
                     expert_specialization: specialization,
                     expert_bio: bio,
-                    is_expert: true
+                    expert_experience: experience,
+                    expert_application: 'pending', // Статус заявки
+                    is_expert: false // Пока не эксперт!
                 })
                 .select();
         } else {
+            // Обновляем существующий профиль с заявкой
             result = await supabaseClient
                 .from('profiles')
                 .update({
@@ -499,22 +737,64 @@ async function updateProfile() {
                     last_name: lastName,
                     expert_specialization: specialization,
                     expert_bio: bio,
-                    is_expert: true,
+                    expert_experience: experience,
+                    expert_application: 'pending', // Статус заявки
+                    is_expert: false, // Пока не эксперт!
                     updated_at: new Date()
                 })
                 .eq('id', user.id)
                 .select();
         }
 
-        if (result.error) {
-            console.error('Ошибка сохранения профиля:', result.error);
-            showNotification('Ошибка сохранения профиля: ' + result.error.message, 'error');
-        } else {
-            showNotification('Профиль эксперта успешно сохранен! 🎯', 'success');
-        }
+        if (result.error) throw result.error;
+
+        showNotification('Заявка на эксперта отправлена! Мы свяжемся с вами 📨', 'success');
+        checkApplicationStatus(); // Проверяем статус
+
     } catch (err) {
-        console.error('Исключение в updateProfile:', err);
-        showNotification('Произошла ошибка: ' + err.message, 'error');
+        console.error('Ошибка подачи заявки:', err);
+        showNotification('Ошибка при подаче заявки ❌', 'error');
+    }
+}
+
+// Проверка статуса заявки
+async function checkApplicationStatus() {
+    const { data: { user } } = await supabaseClient.auth.getUser();
+
+    const { data: profile, error } = await supabaseClient
+        .from('profiles')
+        .select('expert_application, is_expert')
+        .eq('id', user.id)
+        .single();
+
+    const statusSection = document.getElementById('application-status');
+
+    if (profile) {
+        if (profile.expert_application === 'pending') {
+            statusSection.innerHTML = `
+                <div style="background: #fff3cd; padding: 15px; border-radius: 5px;">
+                    <h4>⏳ Заявка на рассмотрении</h4>
+                    <p>Ваша заявка находится на рассмотрении администратором.</p>
+                </div>
+            `;
+        } else if (profile.is_expert) {
+            statusSection.innerHTML = `
+                <div style="background: #d4edda; padding: 15px; border-radius: 5px;">
+                    <h4>✅ Вы эксперт!</h4>
+                    <p>Поздравляем! Теперь вы можете отвечать на вопросы.</p>
+                    <button onclick="toggleExpertMode()" style="background: #28a745; margin-top: 10px;">
+                        👨‍💼 Перейти в режим эксперта
+                    </button>
+                </div>
+            `;
+        } else if (profile.expert_application === 'rejected') {
+            statusSection.innerHTML = `
+                <div style="background: #f8d7da; padding: 15px; border-radius: 5px;">
+                    <h4>❌ Заявка отклонена</h4>
+                    <p>К сожалению, ваша заявка была отклонена.</p>
+                </div>
+            `;
+        }
     }
 }
 
@@ -532,7 +812,7 @@ async function createQuestion() {
 
     try {
         const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
-        
+
         if (userError || !user) {
             showNotification('Ошибка: пользователь не авторизован', 'error');
             return;
@@ -735,3 +1015,39 @@ supabaseClient?.auth.onAuthStateChange((event, session) => {
         showAuth();
     }
 });
+
+// Функции для юридической информации
+function toggleLegalMenu() {
+    const modal = document.getElementById('legalModal');
+    if (modal.classList.contains('hidden')) {
+        modal.classList.remove('hidden');
+        // Открываем первую вкладку по умолчанию
+        openLegalTab('privacy');
+    } else {
+        modal.classList.add('hidden');
+    }
+}
+
+function openLegalTab(tabName) {
+    // Скрываем все табы
+    const tabContents = document.querySelectorAll('.legal-tab-content');
+    tabContents.forEach(tab => tab.classList.remove('active'));
+    
+    // Убираем активный класс со всех кнопок
+    const tabButtons = document.querySelectorAll('.tab-button');
+    tabButtons.forEach(button => button.classList.remove('active'));
+    
+    // Показываем выбранный таб
+    document.getElementById(tabName).classList.add('active');
+    
+    // Активируем соответствующую кнопку
+    event.target.classList.add('active');
+}
+
+// Закрытие модального окна при клике вне его
+window.onclick = function(event) {
+    const modal = document.getElementById('legalModal');
+    if (event.target === modal) {
+        modal.classList.add('hidden');
+    }
+}
