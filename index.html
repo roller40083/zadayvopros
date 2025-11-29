@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ExpertQ&A - Найми эксперта</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+
+
+<body>
+    <div class="container">
+        <h1>👨‍💼 ExpertQ&A</h1>
+        <p>Задайте вопрос эксперту и получите качественный ответ</p>
+
+        <!-- Секция авторизации (показывается когда пользователь не авторизован) -->
+        <div id="auth-section" class="auth-section">
+            <div class="tabs">
+                <div class="tab active" onclick="showTab('login')">Вход</div>
+                <div class="tab" onclick="showTab('register')">Регистрация</div>
+            </div>
+
+            <!-- Форма входа -->
+            <div id="login-form" class="form active">
+                <div class="form-container">
+                    <h3>Вход в аккаунт</h3>
+                    <input type="email" id="login-email" placeholder="Email">
+                    <input type="password" id="login-password" placeholder="Пароль">
+                    <button onclick="signIn()">Войти</button>
+                </div>
+            </div>
+
+            <!-- Форма регистрации -->
+            <div id="register-form" class="form">
+                <div class="form-container">
+                    <h3>Создать аккаунт</h3>
+                    <input type="email" id="register-email" placeholder="Email">
+                    <input type="password" id="register-password" placeholder="Пароль">
+                    <button onclick="signUp()">Зарегистрироваться</button>
+                </div>
+            </div>
+
+            <div id="message"></div>
+        </div>
+
+        <!-- Личный кабинет (показывается после авторизации) -->
+        <div id="dashboard-section" class="dashboard-section hidden">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>Личный кабинет</h2>
+                <button onclick="signOut()" class="secondary">Выйти</button>
+            </div>
+            <!-- Кнопка переключения в режим эксперта -->
+            <div class="section">
+                <button onclick="toggleExpertMode()" style="background: #ff6b00;">👨‍💼 Перейти в режим
+                    эксперта</button>
+            </div>
+
+            <!-- Информация о профиле -->
+            <div class="profile-info">
+                <h3>👋 Добро пожаловать, <span id="user-email"></span>!</h3>
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-number" id="questions-count">0</div>
+                        <div class="stat-label">Мои вопросы</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number" id="answers-count">0</div>
+                        <div class="stat-label">Получено ответов</div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Блок выбора эксперта -->
+            <div class="section">
+                <h3>👨‍💼 Выберите эксперта</h3>
+                <div id="experts-list">
+                    <p>Загрузка экспертов...</p>
+                </div>
+            </div>
+
+            <!-- Блок вопросов -->
+            <div class="section">
+                <h3>❓ Задать вопрос эксперту</h3>
+                <input type="text" id="question-title" placeholder="Заголовок вопроса">
+                <textarea id="question-description" placeholder="Подробное описание вопроса..." rows="4"></textarea>
+                <input type="number" id="question-price" placeholder="Стоимость вопроса (руб)" min="100" value="500">
+
+                <!-- Скрытое поле для ID эксперта -->
+                <input type="hidden" id="selected-expert-id">
+
+                <!-- Блок выбранного эксперта -->
+                <div id="selected-expert-display"
+                    style="display: none; background: #e8f5e8; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                    <strong>👨‍💼 Выбранный эксперт:</strong>
+                    <span id="selected-expert-name"></span>
+                    <button onclick="clearSelectedExpert()"
+                        style="margin-left: 10px; background: #dc3545; padding: 2px 8px; font-size: 12px; border: none; border-radius: 3px; color: white; cursor: pointer;">
+                        ✕
+                    </button>
+                </div>
+
+                <button id="create-question-btn">Задать вопрос за <span id="price-display">500</span> руб</button>
+            </div>
+
+
+
+
+
+            <!-- Список моих вопросов -->
+            <div class="section">
+                <h3>📋 Мои вопросы</h3>
+                <div id="questions-list">
+                    <p>У вас пока нет вопросов</p>
+                </div>
+            </div>
+
+
+        </div>
+
+        <!-- Личный кабинет эксперта (изначально скрыт) -->
+        <div id="expert-dashboard-section" class="dashboard-section hidden">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>👨‍💼 Личный кабинет эксперта</h2>
+                <button onclick="toggleExpertMode()" class="secondary">← Вернуться в обычный режим</button>
+            </div>
+
+            <!-- Статистика эксперта -->
+            <div class="profile-info">
+                <h3>📊 Ваша статистика</h3>
+                <div class="stats" id="expert-stats">
+                    <!-- Статистика загрузится через JS -->
+                </div>
+            </div>
+
+            <!-- Настройки профиля эксперта -->
+            <div class="section">
+                <h3>🎯 Настройки профиля эксперта</h3>
+                <p>Заполните информацию о себе, чтобы клиенты могли вас найти:</p>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <input type="text" id="first-name" placeholder="Имя">
+                    <input type="text" id="last-name" placeholder="Фамилия">
+                </div>
+
+                <input type="text" id="expert-specialization"
+                    placeholder="Ваша специализация (например: Frontend разработчик, Маркетолог, Юрист, стронгмен)">
+                <textarea id="expert-bio" placeholder="Расскажите о своем опыте, образовании и expertise..."
+                    rows="4"></textarea>
+                <button id="update-profile-btn">Сохранить профиль эксперта</button>
+            </div>
+
+            <!-- Список вопросов для эксперта -->
+            <div class="section">
+                <h3>❓ Вопросы от клиентов</h3>
+                <div id="expert-questions-list">
+                    <p>Загрузка вопросов...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Подключаем Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/script.js"></script>
+</body>
+
+</html>
